@@ -46,6 +46,8 @@ def is_relative_path(path: str) -> bool:
     """判断是否为相对路径(需要复制/重写的对象)。"""
     if not path:
         return False
+    if path.startswith("#"):
+        return False
     # 带协议的(http://, https://, ftp:// 等)视为外部
     if re.match(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://", path):
         return False

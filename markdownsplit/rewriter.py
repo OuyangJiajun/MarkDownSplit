@@ -1,166 +1,136 @@
-"""标题提升与图片复制/路径重写。
+"""Heading promotion and local image copying for generated Markdown files."""
 
-标题提升: 扫描文件内出现的最浅标题级别 min_level,把所有标题向上平移
-  delta = min_level - 1,使文件从 H1 开始组织(L1 标题或无标题则不动)。
+from __future__ import annotations
 
-图片处理: 扫描 `![alt](path)` 与 `<img src="path">`,对相对路径图片:
-  - 复制到该文件所在目录的 `assets/` 子目录(按需创建)。
-  - 同名冲突时加数字后缀。
-  - 把引用路径重写为 `assets/<文件名>`。
-  - 代码围栏内的图片语法不重写。
-"""
-
+import filecmp
 import os
 import shutil
 
-from .utils import (
-    HEADING_RE,
-    MD_IMAGE_RE,
-    HTML_IMAGE_RE,
-    is_heading,
-    is_relative_path,
-    ensure_dir,
-)
+from .utils import HEADING_RE, HTML_IMAGE_RE, MD_IMAGE_RE, ensure_dir, is_heading, is_relative_path
 
 
-def _find_min_heading_level(lines) -> int:
-    """返回文件内最浅的标题级别(忽略代码围栏内)。无标题返回 0。"""
+def _find_min_heading_level(lines: list[str]) -> int:
+    """Find the shallowest heading outside fenced code blocks."""
     min_level = 0
     in_fence = False
-    fence_marker = ""
+    marker = ""
     for line in lines:
         stripped = line.lstrip()
-        if not in_fence:
-            if stripped.startswith("```") or stripped.startswith("~~~"):
-                in_fence = True
-                fence_marker = "```" if stripped.startswith("```") else "~~~"
-                continue
-        else:
-            if stripped.startswith(fence_marker):
-                in_fence = False
-                fence_marker = ""
+        if not in_fence and (stripped.startswith("```") or stripped.startswith("~~~")):
+            in_fence = True
+            marker = stripped[:3]
             continue
-        h = is_heading(line)
-        if h is not None:
-            level = h[0]
-            if min_level == 0 or level < min_level:
-                min_level = level
+        if in_fence:
+            if stripped.startswith(marker):
+                in_fence = False
+            continue
+        heading = is_heading(line)
+        if heading and (min_level == 0 or heading[0] < min_level):
+            min_level = heading[0]
     return min_level
 
 
-def _promote_headings(lines) -> list:
-    """把文件内标题向上平移,使最浅标题成为 H1。"""
-    min_level = _find_min_heading_level(lines)
-    if min_level <= 1:
+def _promote_headings(lines: list[str]) -> list[str]:
+    """Make the shallowest heading H1, preserving relative heading depth."""
+    minimum = _find_min_heading_level(lines)
+    if minimum <= 1:
         return lines
-    delta = min_level - 1
-    out = []
+    delta = minimum - 1
+    result: list[str] = []
     in_fence = False
-    fence_marker = ""
+    marker = ""
     for line in lines:
         stripped = line.lstrip()
-        if not in_fence:
-            if stripped.startswith("```") or stripped.startswith("~~~"):
-                in_fence = True
-                fence_marker = "```" if stripped.startswith("```") else "~~~"
-                out.append(line)
-                continue
-        else:
-            out.append(line)
-            if stripped.startswith(fence_marker):
-                in_fence = False
-                fence_marker = ""
+        if not in_fence and (stripped.startswith("```") or stripped.startswith("~~~")):
+            in_fence = True
+            marker = stripped[:3]
+            result.append(line)
             continue
-        m = HEADING_RE.match(line)
-        if m:
-            hashes = m.group(1)
-            rest = line[len(hashes):]
-            new_level = max(1, len(hashes) - delta)
-            out.append("#" * new_level + rest)
+        if in_fence:
+            result.append(line)
+            if stripped.startswith(marker):
+                in_fence = False
+            continue
+        match = HEADING_RE.match(line)
+        if match:
+            hashes = match.group(1)
+            result.append("#" * max(1, len(hashes) - delta) + line[len(hashes):])
         else:
-            out.append(line)
-    return out
+            result.append(line)
+    return result
 
 
-def _rewrite_images(lines, source_md_dir: str, file_dir_abs: str) -> list:
-    """复制相对路径图片到 file_dir_abs/assets,并重写引用路径。"""
-    assets_dir = os.path.join(file_dir_abs, "assets")
-    # basename -> 已使用的目标文件名(检测冲突)
-    used_names = {}
-    # 源绝对路径 -> 目标文件名(本文件内去重复制)
-    copied = {}
+def _asset_name(source: str, assets_dir: str) -> str:
+    """Choose a non-conflicting asset name, reusing identical existing files."""
+    base = os.path.basename(source)
+    stem, suffix = os.path.splitext(base)
+    candidate = base
+    counter = 1
+    while True:
+        destination = os.path.join(assets_dir, candidate)
+        if not os.path.exists(destination) or filecmp.cmp(source, destination, shallow=False):
+            return candidate
+        candidate = f"{stem}_{counter}{suffix}"
+        counter += 1
 
-    def resolve_and_copy(path: str) -> str:
-        """返回重写后的相对路径(相对 file_dir),或 None 表示不处理。"""
+
+def _rewrite_images(lines: list[str], source_md_dir: str, file_dir: str) -> list[str]:
+    """Copy relative image files into ``assets`` and rewrite their references."""
+    assets_dir = os.path.join(file_dir, "assets")
+    copied: dict[str, str] = {}
+
+    def copy_and_rewrite(path: str) -> str | None:
         if not is_relative_path(path):
             return None
-        src = os.path.normpath(os.path.join(source_md_dir, path))
-        if not os.path.isfile(src):
+        source = os.path.normpath(os.path.join(source_md_dir, path))
+        if not os.path.isfile(source):
             return None
-        if src in copied:
-            return os.path.join("assets", copied[src])
-        base = os.path.basename(src)
-        # 处理同名冲突
-        target_name = base
-        if target_name in used_names:
-            name, ext = os.path.splitext(base)
-            i = 1
-            while f"{name}_{i}{ext}" in used_names:
-                i += 1
-            target_name = f"{name}_{i}{ext}"
-        ensure_dir(assets_dir)
-        shutil.copy2(src, os.path.join(assets_dir, target_name))
-        used_names[target_name] = src
-        copied[src] = target_name
-        return os.path.join("assets", target_name)
+        if source not in copied:
+            ensure_dir(assets_dir)
+            target_name = _asset_name(source, assets_dir)
+            destination = os.path.join(assets_dir, target_name)
+            if not os.path.exists(destination):
+                shutil.copy2(source, destination)
+            copied[source] = target_name
+        return f"assets/{copied[source]}"
 
-    out = []
+    result: list[str] = []
     in_fence = False
-    fence_marker = ""
+    marker = ""
     for line in lines:
         stripped = line.lstrip()
-        if not in_fence:
-            if stripped.startswith("```") or stripped.startswith("~~~"):
-                in_fence = True
-                fence_marker = "```" if stripped.startswith("```") else "~~~"
-                out.append(line)
-                continue
-        else:
-            out.append(line)
-            if stripped.startswith(fence_marker):
+        if not in_fence and (stripped.startswith("```") or stripped.startswith("~~~")):
+            in_fence = True
+            marker = stripped[:3]
+            result.append(line)
+            continue
+        if in_fence:
+            result.append(line)
+            if stripped.startswith(marker):
                 in_fence = False
-                fence_marker = ""
             continue
 
-        def _md_repl(m):
-            alt, path = m.group(1), m.group(2)
-            new_path = resolve_and_copy(path)
-            if new_path is None:
-                return m.group(0)
-            return f"![{alt}]({new_path})"
+        def markdown_replacement(match):
+            target = copy_and_rewrite(match.group(2))
+            # Replacing only the URL also preserves an optional Markdown title.
+            return match.group(0) if target is None else match.group(0).replace(match.group(2), target, 1)
 
-        def _html_repl(m):
-            path = m.group(1)
-            new_path = resolve_and_copy(path)
-            if new_path is None:
-                return m.group(0)
-            return m.group(0).replace(path, new_path, 1)
+        def html_replacement(match):
+            target = copy_and_rewrite(match.group(1))
+            return match.group(0) if target is None else match.group(0).replace(match.group(1), target, 1)
 
-        new_line = MD_IMAGE_RE.sub(_md_repl, line)
-        new_line = HTML_IMAGE_RE.sub(_html_repl, new_line)
-        out.append(new_line)
-    return out
+        result.append(HTML_IMAGE_RE.sub(html_replacement, MD_IMAGE_RE.sub(markdown_replacement, line)))
+    return result
 
 
-def rewrite(of, output_root: str, source_md_dir: str) -> str:
-    """对一个 OutputFile 做标题提升 + 图片处理,并写入磁盘。返回写入的绝对路径。"""
-    lines = _promote_headings(of.lines)
-    file_dir_abs = os.path.join(output_root, *of.dir_segments) if of.dir_segments else output_root
-    lines = _rewrite_images(lines, source_md_dir, file_dir_abs)
-    ensure_dir(file_dir_abs)
-    target = os.path.join(file_dir_abs, of.filename)
-    with open(target, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+def rewrite(output_file, output_root: str, source_md_dir: str) -> str:
+    """Write one planned file after promoting headings and copying images."""
+    file_dir = os.path.join(output_root, *output_file.dir_segments) if output_file.dir_segments else output_root
+    lines = _rewrite_images(_promote_headings(output_file.lines), source_md_dir, file_dir)
+    ensure_dir(file_dir)
+    target = os.path.join(file_dir, output_file.filename)
+    with open(target, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("\n".join(lines))
         if lines:
-            f.write("\n")
+            handle.write("\n")
     return target

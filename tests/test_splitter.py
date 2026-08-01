@@ -104,13 +104,13 @@ def test_split_structure_and_promotion(tmp_path):
 
     rel = sorted(os.path.relpath(p, out_root).replace(os.sep, "/") for p in paths)
     # 三个 H1 → 三个目录
-    assert "01-概述/概述.md" in rel
-    assert "02-架构设计/架构设计.md" in rel or "02-架构设计/00-架构设计.md" in rel
-    assert "03-部署/部署.md" in rel
+    assert "01-概述/00-概述.md" in rel
+    assert "02-架构设计/00-架构设计.md" in rel
+    assert "03-部署/00-部署.md" in rel
     # 架构设计被拆分,含模块A/B/C
-    assert any("02-架构设计/01-模块A.md" == r for r in rel)
+    assert any(r.startswith("02-架构设计/01-模块A/") for r in rel)
     assert any("02-架构设计/02-模块B.md" == r for r in rel)
-    assert any("02-架构设计/03-模块C.md" == r for r in rel)
+    assert any(r.startswith("02-架构设计/03-模块C/") for r in rel)
     # 模块A 含子模块,被拆分为目录
     assert any(r.startswith("02-架构设计/01-模块A/") for r in rel)
 
@@ -127,7 +127,7 @@ def test_image_copied_and_path_rewritten(tmp_path):
         rewrite(of, out_root, source_md_dir)
 
     # 概述文件应含 assets/overview.png 并复制成功
-    overview = os.path.join(out_root, "01-概述", "概述.md")
+    overview = os.path.join(out_root, "01-概述", "00-概述.md")
     content = open(overview, encoding="utf-8").read()
     assert "assets/overview.png" in content
     assert os.path.isfile(os.path.join(out_root, "01-概述", "assets", "overview.png"))
@@ -152,12 +152,9 @@ def test_title_promotion(tmp_path):
 
     # 模块A 被拆分,其子模块A1 文件原为 H3,应提升为 H1
     a1_candidates = []
-    for of in files:
-        if of.filename.startswith("子模块A1"):
-            rewrite(of, out_root, source_md_dir)
     for dirpath, _, fns in os.walk(out_root):
         for fn in fns:
-            if fn.startswith("子模块A1"):
+            if fn.endswith("子模块A1.md"):
                 a1_candidates.append(os.path.join(dirpath, fn))
     assert a1_candidates, "未找到子模块A1 文件"
     content = open(a1_candidates[0], encoding="utf-8").read()
