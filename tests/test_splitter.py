@@ -104,15 +104,15 @@ def test_split_structure_and_promotion(tmp_path):
 
     rel = sorted(os.path.relpath(p, out_root).replace(os.sep, "/") for p in paths)
     # 三个 H1 → 三个目录
-    assert "01-概述/00-概述.md" in rel
-    assert "02-架构设计/00-架构设计.md" in rel
-    assert "03-部署/00-部署.md" in rel
+    assert "概述/概述.md" in rel
+    assert "架构设计/架构设计.md" in rel
+    assert "部署/部署.md" in rel
     # 架构设计被拆分,含模块A/B/C
-    assert any(r.startswith("02-架构设计/01-模块A/") for r in rel)
-    assert any("02-架构设计/02-模块B.md" == r for r in rel)
-    assert any(r.startswith("02-架构设计/03-模块C/") for r in rel)
+    assert any(r.startswith("架构设计/模块A/") for r in rel)
+    assert any("架构设计/模块B.md" == r for r in rel)
+    assert any(r.startswith("架构设计/模块C/") for r in rel)
     # 模块A 含子模块,被拆分为目录
-    assert any(r.startswith("02-架构设计/01-模块A/") for r in rel)
+    assert any(r.startswith("架构设计/模块A/") for r in rel)
 
 
 def test_image_copied_and_path_rewritten(tmp_path):
@@ -127,13 +127,13 @@ def test_image_copied_and_path_rewritten(tmp_path):
         rewrite(of, out_root, source_md_dir)
 
     # 概述文件应含 assets/overview.png 并复制成功
-    overview = os.path.join(out_root, "01-概述", "00-概述.md")
+    overview = os.path.join(out_root, "概述", "概述.md")
     content = open(overview, encoding="utf-8").read()
     assert "assets/overview.png" in content
-    assert os.path.isfile(os.path.join(out_root, "01-概述", "assets", "overview.png"))
-    arch = os.path.join(out_root, "02-架构设计", "00-架构设计.md")
+    assert os.path.isfile(os.path.join(out_root, "概述", "assets", "overview.png"))
+    arch = os.path.join(out_root, "架构设计", "架构设计.md")
     if not os.path.isfile(arch):
-        arch = os.path.join(out_root, "02-架构设计", "架构设计.md")
+        arch = os.path.join(out_root, "架构设计", "架构设计.md")
     content = open(arch, encoding="utf-8").read()
     assert "assets/arch.png" in content
     assert os.path.isfile(os.path.join(os.path.dirname(arch), "assets", "arch.png"))
@@ -185,8 +185,8 @@ def test_no_headings(tmp_path):
     out_root = os.path.join(str(tmp_path), "out")
     rc = main([md_path, "-o", out_root, "--threshold", "3", "--force"])
     assert rc == 0
-    # 前置内容写入 00-index.md
-    idx = os.path.join(out_root, "00-index.md")
+    # 前置内容写入 index.md
+    idx = os.path.join(out_root, "index.md")
     assert os.path.isfile(idx)
 
 

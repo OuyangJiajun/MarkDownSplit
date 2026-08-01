@@ -121,10 +121,10 @@ def split_markdown(input_path: Path, output_dir: Path, threshold: int = 500) -> 
         target.write_text("".join(rewrite_images(content, input_path.parent, target_dir)), encoding="utf-8")
         written.append(target)
 
-    for index, section in enumerate(sections, 1):
-        emit(section, output_dir / f"{index:02d}-{safe_name(section.title)}")
+    for section in sections:
+        emit(section, output_dir / safe_name(section.title))
     if preamble:
-        target = output_dir / "00-preamble.md"
+        target = output_dir / "index.md"
         target.write_text("".join(rewrite_images(preamble, input_path.parent, output_dir)), encoding="utf-8")
         written.insert(0, target)
     return written

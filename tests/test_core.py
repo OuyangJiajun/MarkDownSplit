@@ -18,5 +18,5 @@ def test_split_and_copy_image(tmp_path: Path) -> None:
     output = tmp_path / "out"
     written = split_markdown(source, output)
     assert len(written) == 1
-    assert (output / "01-Guide" / "assets" / "image.png").is_file()
+    assert (output / "Guide" / "assets" / "image.png").is_file()
     assert "assets/image.png" in written[0].read_text(encoding="utf-8")
