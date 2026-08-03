@@ -123,12 +123,24 @@ def _rewrite_images(lines: list[str], source_md_dir: str, file_dir: str) -> list
     return result
 
 
+def _safe_output_path(output_file) -> str:
+    parts = list(output_file.dir_segments)
+    filename = output_file.filename
+    if parts:
+        existing_dirs = set(parts)
+        if filename in existing_dirs:
+            stem, suffix = os.path.splitext(filename)
+            filename = f"{stem}_file{suffix or '.md'}"
+    return os.path.join(*parts, filename) if parts else filename
+
+
 def rewrite(output_file, output_root: str, source_md_dir: str) -> str:
     """Write one planned file after promoting headings and copying images."""
     file_dir = os.path.join(output_root, *output_file.dir_segments) if output_file.dir_segments else output_root
     lines = _rewrite_images(_promote_headings(output_file.lines), source_md_dir, file_dir)
     ensure_dir(file_dir)
-    target = os.path.join(file_dir, output_file.filename)
+    target_name = os.path.basename(_safe_output_path(output_file))
+    target = os.path.join(file_dir, target_name)
     with open(target, "w", encoding="utf-8", newline="\n") as handle:
         handle.write("\n".join(lines))
         if lines:

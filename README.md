@@ -1,68 +1,91 @@
-# MarkdownSplit
+# markdownSplit
 
-将一个大型 Markdown 文档按标题层级拆分为可独立阅读的小文档，并把本地图片复制到对应输出目录。
+`markdownSplit` is a small command-line tool for splitting a large Markdown document into a structured directory tree based on heading hierarchy.
 
-## 使用方式
+## Features
 
-项目只依赖 Python 标准库。运行：
+- Parse Markdown heading structure into nested sections
+- Split large sections recursively using a configurable line threshold
+- Preserve document preamble as `index.md`
+- Promote headings so each generated file starts at a sensible level
+- Copy local images into per-file `assets/` folders and rewrite references
+- Skip fenced code blocks when detecting headings or rewriting images
 
-```powershell
-python -m markdownsplit .\tests\test.md -o .\output --threshold 300
+## Installation
+
+This project is designed to run directly from the source tree.
+
+```bash
+python -m markdownsplit --help
 ```
 
-若输出目录已存在，显式传入 `--force` 后会先删除原目录再重新生成：
+If you want to install it into your environment, use your preferred packaging workflow for this repository.
 
-```powershell
-python -m markdownsplit .\tests\test.md -o .\output --threshold 300 --force
+## Usage
+
+Run the CLI with an input Markdown file and an output directory:
+
+```bash
+python -m markdownsplit input.md -o output
 ```
 
-参数说明：
+Useful options:
 
-- `input`：要拆分的 Markdown 文件。
-- `-o` / `--output`：生成目录。
-- `--threshold`：一个标题块总行数超过此值且还包含子标题时，继续向下拆分；默认 `500`。
-- `--force`：覆盖已有输出目录。
+- `-o, --output` — output directory
+- `--threshold` — split sections larger than this many lines; default is `500`
+- `--force` — replace the output directory if it already exists
 
-## 拆分规则
+Example:
 
-1. 文档首先解析为标题树（H1–H6）。代码围栏中的 `#` 不视为标题。
-2. 每个 H1 对应一个以标题命名的目录，例如 `基础/`；文件和目录均不添加顺序前缀。
-3. 一个标题块同时具有子标题且总行数超过 `threshold` 时，建立子目录并递归处理；否则整个块写入一个 Markdown 文件。这样短小章节不会被过度切碎。
-4. 被拆出的文件会将其最浅标题提升为 H1，并同步调整更深层标题，保证单独打开仍有正确层级。
-5. 第一个 H1 之前的正文会写入输出根目录的 `index.md`。
+```bash
+python -m markdownsplit docs/guide.md -o build/guide --threshold 300 --force
+```
 
-例如，较大的“架构设计”章节可能生成：
+## Output structure
+
+Given a document like this:
+
+```markdown
+Intro text
+
+# Guide
+Some intro text
+
+## Setup
+Setup details
+
+## Usage
+Usage details
+```
+
+The tool generates a structure similar to:
 
 ```text
 output/
-├─ 概览/
-│  └─ 概览.md
-└─ 架构设计/
-   ├─ 架构设计.md
-   ├─ 模块A/
-   │  ├─ 模块A.md
-   │  ├─ 子模块A1.md
-   │  └─ 子模块A2.md
-   └─ 模块B.md
+├─ index.md
+└─ Guide/
+   ├─ Guide.md
+   ├─ Setup.md
+   └─ Usage.md
 ```
 
-`架构设计.md` 仅在该标题下、子标题前确实有正文时生成。
+If a generated file contains local image references, the referenced image files are copied into an `assets/` directory next to that file.
 
-## 图片与资源
+## Notes
 
-工具会识别 Markdown 图片 `![说明](relative/path.png)` 和 HTML 图片 `<img src="relative/path.png">`。
+- Heading names are sanitized to create valid file and directory names.
+- Duplicate sibling headings are disambiguated with numeric suffixes.
+- Only local relative image paths are copied; remote URLs are left unchanged.
+- Fenced code blocks are ignored when detecting headings and rewriting images.
 
-- 相对于原 Markdown 的本地图片会复制到输出文件同级的 `assets/`；引用改写成 `assets/文件名.png`。
-- 外部 URL、绝对路径、数据 URI 和锚点不会被改写。
-- 同一输出目录中遇到同名但内容不同的图片时，后来的文件会自动命名为 `name_1.png`、`name_2.png`，不会覆盖先前资源。
-- 代码围栏内的图片语法保持原样。
+## Project layout
 
-仓库中的 `tests/test.md` 和 `tests/test_assets/` 是一份较大的真实测试样例，可直接用于上述命令。
+- `markdownsplit/cli.py` — command-line entry point
+- `markdownsplit/parser.py` — Markdown heading tree parser
+- `markdownsplit/splitter.py` — output file layout planner
+- `markdownsplit/rewriter.py` — heading promotion and image copying
+- `markdownsplit/utils.py` — shared helpers
 
-## 开发与测试
+## License
 
-```powershell
-python -m pytest -q
-```
-
-现有测试覆盖标题提升、递归拆分、图片复制与 CLI 覆盖行为。
+No license file is currently included.

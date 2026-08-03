@@ -1,8 +1,8 @@
 """Turn a parsed Markdown heading tree into an output file layout.
 
-Output names use the original heading text directly: a top-level H1 named
-``Overview`` becomes ``Overview/``; a split subsection named ``Details``
-becomes ``Details/``.  No sequence prefixes are added.
+Output names use the original heading text directly. Duplicate headings at the
+same level are disambiguated with stable numeric suffixes so sibling documents
+and directories do not overwrite one another.
 """
 
 from __future__ import annotations
@@ -38,15 +38,26 @@ def _whole_block_lines(block: Block) -> list[str]:
     return lines
 
 
-def _emit_subblock(block: Block, base_dir: list[str], threshold: int, out: list[OutputFile]) -> None:
+def _unique_name(base: str, used: set[str]) -> str:
+    candidate = base or "untitled"
+    index = 2
+    while candidate in used:
+        candidate = f"{base}_{index}"
+        index += 1
+    used.add(candidate)
+    return candidate
+
+
+def _emit_subblock(block: Block, base_dir: list[str], threshold: int, out: list[OutputFile], used_names: set[str]) -> None:
     """Emit a non-H1 block, recursively creating directories when needed."""
-    safe = sanitize_filename(block.title)
+    safe = _unique_name(sanitize_filename(block.title), used_names)
     if _should_split(block, threshold):
         sub_dir = base_dir + [safe]
         if block.preamble:
             out.append(OutputFile(sub_dir, f"{safe}.md", block.own_lines()))
+        child_names: set[str] = set()
         for child in block.children:
-            _emit_subblock(child, sub_dir, threshold, out)
+            _emit_subblock(child, sub_dir, threshold, out, child_names)
     else:
         out.append(OutputFile(base_dir, f"{safe}.md", _whole_block_lines(block)))
 
@@ -61,14 +72,16 @@ def split_tree(root: Block, threshold: int) -> list[OutputFile]:
         if preamble:
             out.append(OutputFile([], "index.md", preamble))
 
+    root_names: set[str] = set()
     for h1 in root.children:
-        safe = sanitize_filename(h1.title)
+        safe = _unique_name(sanitize_filename(h1.title), root_names)
         h1_dir = [safe]
         if _should_split(h1, threshold):
             if h1.preamble:
                 out.append(OutputFile(h1_dir, f"{safe}.md", h1.own_lines()))
+            child_names: set[str] = set()
             for child in h1.children:
-                _emit_subblock(child, h1_dir, threshold, out)
+                _emit_subblock(child, h1_dir, threshold, out, child_names)
         else:
             out.append(OutputFile(h1_dir, f"{safe}.md", _whole_block_lines(h1)))
     return out
